@@ -1,0 +1,15 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "value": "adf-nyctaxi-de-raj"
+        },
+        "ls_http_nyc_tlc_properties_typeProperties_url": {
+            "value": "https://d37ci6vzurychx.cloudfront.net"
+        },
+        "ls_adls_nyctaxi_properties_typeProperties_url": {
+            "value": "https://adlsnyctaxide.dfs.core.windows.net/"
+        }
+    }
+}
