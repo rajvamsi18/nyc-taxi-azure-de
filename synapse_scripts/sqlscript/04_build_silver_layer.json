@@ -1,0 +1,17 @@
+{
+	"name": "04_build_silver_layer",
+	"properties": {
+		"content": {
+			"query": "use nyctaxi_db\n\n-- Build the silver layer for 2024\n-- This reads all bronze parquet files, cleans them,\n-- and writes clean parquet files into silver/\n\nIF EXISTS (SELECT * FROM sys.external_tables WHERE name = 'silver_yellow_trips_2024')\n    DROP EXTERNAL TABLE silver_yellow_trips_2024;\n\n\n-- Now create the silver table\nCREATE EXTERNAL TABLE silver_yellow_trips_2024\nWITH (\n    LOCATION     = 'yellow_taxi/year=2024/',\n    DATA_SOURCE  = silver_source,\n    FILE_FORMAT  = parquet_format\n)\nAS\nSELECT\n    -- Core trip identifiers\n    VendorID,\n\n    -- Timestamps\n    tpep_pickup_datetime                                          AS pickup_datetime,\n    tpep_dropoff_datetime                                         AS dropoff_datetime,\n\n    -- trip duration in minutes\n    -- This derived field does not exist in bronze\n    DATEDIFF(MINUTE, tpep_pickup_datetime, tpep_dropoff_datetime) AS trip_duration_mins,\n\n    -- Location\n    PULocationID                                                  AS pickup_location_id,\n    DOLocationID                                                  AS dropoff_location_id,\n\n    -- Trip metrics\n    passenger_count,\n    trip_distance,\n    RatecodeID,\n\n    -- Financial\n    fare_amount,\n    extra,\n    mta_tax,\n    tip_amount,\n    tolls_amount,\n    improvement_surcharge,\n    congestion_surcharge,\n    total_amount,\n    Airport_fee,\n\n    -- Payment\n    payment_type\n\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS src\n\n-- Silver cleaning rules — every WHERE condition has a reason\nWHERE\n    passenger_count > 0              -- removes 140,162 vendor-gap rows + zero-passenger rows\n    AND trip_distance > 0            -- removes physically impossible negative distances\n    AND fare_amount > 0              -- removes zero and negative fares (data entry errors)\n    AND tpep_pickup_datetime >= '2024-01-01'   -- removes out-of-range dates\n    AND tpep_pickup_datetime <  '2025-01-01'   -- removes future-dated records\n    AND DATEDIFF(MINUTE,\n        tpep_pickup_datetime,\n        tpep_dropoff_datetime) BETWEEN 1 AND 300;  -- trips between 1 min and 5 hours",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "nyctaxi_db",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

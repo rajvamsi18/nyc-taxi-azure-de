@@ -1,0 +1,17 @@
+{
+	"name": "02_bronze_exploration",
+	"properties": {
+		"content": {
+			"query": "-- Always the first line of every script\nUSE nyctaxi_db;\n\n-- How many trips across all 12 months?\nSELECT COUNT(*) AS total_trips\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS trips;\n\n\n-- Validate the vendor-level null pattern we found during inspection\nSELECT\n    COUNT(*)                                          AS total_rows,\n    SUM(CASE WHEN passenger_count IS NULL THEN 1 ELSE 0 END) AS null_passenger_count,\n    SUM(CASE WHEN fare_amount IS NULL THEN 1 ELSE 0 END)     AS null_fare_amount,\n    SUM(CASE WHEN trip_distance <= 0 THEN 1 ELSE 0 END)      AS invalid_distance,\n    SUM(CASE WHEN fare_amount <= 0 THEN 1 ELSE 0 END)        AS invalid_fare\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS trips;\n\n-- Revenue by month — first business question answered\nSELECT\n    MONTH(tpep_pickup_datetime)     AS pickup_month,\n    COUNT(*)                         AS total_trips,\n    ROUND(SUM(fare_amount), 2)       AS total_fare_revenue,\n    ROUND(AVG(fare_amount), 2)       AS avg_fare,\n    ROUND(AVG(trip_distance), 2)     AS avg_distance_miles\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS trips\nWHERE fare_amount > 0\n  AND trip_distance > 0\nGROUP BY MONTH(tpep_pickup_datetime)\nORDER BY pickup_month;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "nyctaxi_db",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

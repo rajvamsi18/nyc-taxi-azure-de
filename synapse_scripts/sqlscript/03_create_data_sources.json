@@ -1,0 +1,17 @@
+{
+	"name": "03_create_data_sources",
+	"properties": {
+		"content": {
+			"query": "USE nyctaxi_db;\n\nCREATE MASTER KEY ENCRYPTION BY PASSWORD = 'NycTaxi@Master2024!';\n\nCREATE EXTERNAL DATA SOURCE bronze_source\nWITH (\n    LOCATION = 'https://adlsnyctaxide.dfs.core.windows.net/bronze'\n);\n\nCREATE EXTERNAL DATA SOURCE silver_source\nWITH (\n    LOCATION = 'https://adlsnyctaxide.dfs.core.windows.net/silver'\n);\n\nCREATE EXTERNAL FILE FORMAT parquet_format\nWITH (FORMAT_TYPE = PARQUET);",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "nyctaxi_db",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"name": "05_verify_silver",
+	"properties": {
+		"content": {
+			"query": "use nyctaxi_db\n\n-- Confirm row counts and that cleaning worked\nSELECT\n    COUNT(*)                    AS silver_row_count,\n    MIN(pickup_datetime)        AS earliest_trip,\n    MAX(pickup_datetime)        AS latest_trip,\n    ROUND(AVG(fare_amount), 2)  AS avg_fare,\n    ROUND(AVG(trip_duration_mins), 1) AS avg_duration_mins\nFROM silver_yellow_trips_2024;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "nyctaxi_db",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}
