@@ -1,0 +1,197 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"type": "string",
+			"metadata": "Workspace name",
+			"defaultValue": "synapse-nyctaxi-de"
+		},
+		"synapse-nyctaxi-de-WorkspaceDefaultSqlServer_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'synapse-nyctaxi-de-WorkspaceDefaultSqlServer'",
+			"defaultValue": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:synapse-nyctaxi-de.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"synapse-nyctaxi-de-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://adlsnyctaxide.dfs.core.windows.net"
+		}
+	},
+	"variables": {
+		"workspaceId": "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('workspaceName'), '/synapse-nyctaxi-de-WorkspaceDefaultSqlServer')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"parameters": {
+					"DBName": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlDW",
+				"typeProperties": {
+					"connectionString": "[parameters('synapse-nyctaxi-de-WorkspaceDefaultSqlServer_connectionString')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/synapse-nyctaxi-de-WorkspaceDefaultStorage')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('synapse-nyctaxi-de-WorkspaceDefaultStorage_properties_typeProperties_url')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/AutoResolveIntegrationRuntime')]",
+			"type": "Microsoft.Synapse/workspaces/integrationRuntimes",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "Managed",
+				"typeProperties": {
+					"computeProperties": {
+						"location": "AutoResolve",
+						"dataFlowProperties": {
+							"computeType": "General",
+							"coreCount": 8,
+							"timeToLive": 0
+						}
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/WorkspaceSystemIdentity')]",
+			"type": "Microsoft.Synapse/workspaces/credentials",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "ManagedIdentity",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/01_create_database')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "CREATE DATABASE nyctaxi_db;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/02_bronze_exploration')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "-- Always the first line of every script\nUSE nyctaxi_db;\n\n-- How many trips across all 12 months?\nSELECT COUNT(*) AS total_trips\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS trips;\n\n\n-- Validate the vendor-level null pattern we found during inspection\nSELECT\n    COUNT(*)                                          AS total_rows,\n    SUM(CASE WHEN passenger_count IS NULL THEN 1 ELSE 0 END) AS null_passenger_count,\n    SUM(CASE WHEN fare_amount IS NULL THEN 1 ELSE 0 END)     AS null_fare_amount,\n    SUM(CASE WHEN trip_distance <= 0 THEN 1 ELSE 0 END)      AS invalid_distance,\n    SUM(CASE WHEN fare_amount <= 0 THEN 1 ELSE 0 END)        AS invalid_fare\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS trips;\n\n-- Revenue by month — first business question answered\nSELECT\n    MONTH(tpep_pickup_datetime)     AS pickup_month,\n    COUNT(*)                         AS total_trips,\n    ROUND(SUM(fare_amount), 2)       AS total_fare_revenue,\n    ROUND(AVG(fare_amount), 2)       AS avg_fare,\n    ROUND(AVG(trip_distance), 2)     AS avg_distance_miles\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS trips\nWHERE fare_amount > 0\n  AND trip_distance > 0\nGROUP BY MONTH(tpep_pickup_datetime)\nORDER BY pickup_month;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "nyctaxi_db",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/03_create_data_sources')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "USE nyctaxi_db;\n\nCREATE MASTER KEY ENCRYPTION BY PASSWORD = 'NycTaxi@Master2024!';\n\nCREATE EXTERNAL DATA SOURCE bronze_source\nWITH (\n    LOCATION = 'https://adlsnyctaxide.dfs.core.windows.net/bronze'\n);\n\nCREATE EXTERNAL DATA SOURCE silver_source\nWITH (\n    LOCATION = 'https://adlsnyctaxide.dfs.core.windows.net/silver'\n);\n\nCREATE EXTERNAL FILE FORMAT parquet_format\nWITH (FORMAT_TYPE = PARQUET);\n\n\nUSE nyctaxi_db;\n\n-- Create external table for taxi zone reference data\n-- Source file lives in bronze/reference/taxi_zone_lookup.csv\nCREATE EXTERNAL FILE FORMAT csv_format\nWITH (\n    FORMAT_TYPE = DELIMITEDTEXT,\n    FORMAT_OPTIONS (\n        FIELD_TERMINATOR = ',',\n        STRING_DELIMITER = '\"',\n        FIRST_ROW = 2,        -- skip header row\n        USE_TYPE_DEFAULT = TRUE\n    )\n);\n\nCREATE EXTERNAL TABLE dbo.taxi_zone_lookup (\n    LocationID    INT,\n    Borough       VARCHAR(50),\n    Zone          VARCHAR(100),\n    service_zone  VARCHAR(50)\n)\nWITH (\n    LOCATION     = 'reference/taxi_zone_lookup.csv',\n    DATA_SOURCE  = bronze_source,\n    FILE_FORMAT  = csv_format\n);\n\n-- Verify it worked\nSELECT TOP 5 * FROM dbo.taxi_zone_lookup;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "nyctaxi_db",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/04_build_silver_layer')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "use nyctaxi_db\n\n-- Build the silver layer for 2024\n-- This reads all bronze parquet files, cleans them,\n-- and writes clean parquet files into silver/\n\nIF EXISTS (SELECT * FROM sys.external_tables WHERE name = 'silver_yellow_trips_2024')\n    DROP EXTERNAL TABLE silver_yellow_trips_2024;\n\n\n-- Now create the silver table\nCREATE EXTERNAL TABLE silver_yellow_trips_2024\nWITH (\n    LOCATION     = 'yellow_taxi/year=2024/',\n    DATA_SOURCE  = silver_source,\n    FILE_FORMAT  = parquet_format\n)\nAS\nSELECT\n    -- Core trip identifiers\n    VendorID,\n\n    -- Timestamps\n    tpep_pickup_datetime                                          AS pickup_datetime,\n    tpep_dropoff_datetime                                         AS dropoff_datetime,\n\n    -- trip duration in minutes\n    -- This derived field does not exist in bronze\n    DATEDIFF(MINUTE, tpep_pickup_datetime, tpep_dropoff_datetime) AS trip_duration_mins,\n\n    -- Location\n    PULocationID                                                  AS pickup_location_id,\n    DOLocationID                                                  AS dropoff_location_id,\n\n    -- Trip metrics\n    passenger_count,\n    trip_distance,\n    RatecodeID,\n\n    -- Financial\n    fare_amount,\n    extra,\n    mta_tax,\n    tip_amount,\n    tolls_amount,\n    improvement_surcharge,\n    congestion_surcharge,\n    total_amount,\n    Airport_fee,\n\n    -- Payment\n    payment_type\n\nFROM OPENROWSET(\n    BULK 'https://adlsnyctaxide.dfs.core.windows.net/bronze/yellow_taxi/year=2024/*/*.parquet',\n    FORMAT = 'PARQUET'\n) AS src\n\n-- Silver cleaning rules — every WHERE condition has a reason\nWHERE\n    passenger_count > 0              -- removes 140,162 vendor-gap rows + zero-passenger rows\n    AND trip_distance > 0            -- removes physically impossible negative distances\n    AND fare_amount > 0              -- removes zero and negative fares (data entry errors)\n    AND tpep_pickup_datetime >= '2024-01-01'   -- removes out-of-range dates\n    AND tpep_pickup_datetime <  '2025-01-01'   -- removes future-dated records\n    AND DATEDIFF(MINUTE,\n        tpep_pickup_datetime,\n        tpep_dropoff_datetime) BETWEEN 1 AND 300;  -- trips between 1 min and 5 hours",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "nyctaxi_db",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/05_verify_silver')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "use nyctaxi_db\n\n-- Confirm row counts and that cleaning worked\nSELECT\n    COUNT(*)                    AS silver_row_count,\n    MIN(pickup_datetime)        AS earliest_trip,\n    MAX(pickup_datetime)        AS latest_trip,\n    ROUND(AVG(fare_amount), 2)  AS avg_fare,\n    ROUND(AVG(trip_duration_mins), 1) AS avg_duration_mins\nFROM silver_yellow_trips_2024;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "nyctaxi_db",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		}
+	]
+}
