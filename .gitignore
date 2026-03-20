@@ -1,0 +1,26 @@
+# dbt
+dbt-env/
+target/
+dbt_packages/
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# dbt credentials — NEVER commit this
+profiles.yml
+.dbt/
+
+# Mac system files
+.DS_Store
+
+# Raw data files — too large for GitHub
+raw_sample/
+
+# Azure credentials
+local_settings.json
+*.secret
