@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: silver
+    description: "Cleaned silver layer — 35.5M NYC taxi trips 2024"
+    database: nyctaxi_db
+    schema: dbo
+    tables:
+      - name: silver_yellow_trips_2024
+        description: "Cleaned yellow taxi trips — nulls removed, invalid records filtered, trip_duration_mins computed"
+
+  - name: bronze_reference
+    description: "Reference data loaded from bronze container"
+    database: nyctaxi_db
+    schema: dbo
+    tables:
+      - name: taxi_zone_lookup
+        description: "265 NYC taxi zones mapping LocationID to zone name and borough"
+        columns:
+          - name: LocationID
+            description: "TLC taxi zone ID — foreign key to pickup/dropoff location in trips"
+          - name: Borough
+            description: "NYC borough: Manhattan, Brooklyn, Queens, Bronx, Staten Island, EWR"
+          - name: Zone
+            description: "Human readable zone name e.g. JFK Airport, Midtown Center"
+          - name: service_zone
+            description: "Service category: Yellow Zone, Boro Zone, Airports, EWR"

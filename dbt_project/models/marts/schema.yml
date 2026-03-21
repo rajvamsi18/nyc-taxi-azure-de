@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: dim_zones
+    description: "265 NYC taxi zones mapping LocationID to human-readable zone name and borough"
+    columns:
+      - name: location_id
+        description: "Primary key — TLC taxi zone ID"
+        tests:
+          - unique
+          - not_null
+      - name: borough
+        description: "NYC borough: Manhattan, Brooklyn, Queens, Bronx, Staten Island, EWR"
+        tests:
+          - not_null
+      - name: zone_name
+        description: "Human readable zone name e.g. JFK Airport, Midtown Center"
+        tests:
+          - not_null
+
+  - name: dim_date
+    description: "Calendar dimension covering all 366 days of 2024"
+    columns:
+      - name: date_id
+        description: "Primary key — date as integer e.g. 20240101"
+        tests:
+          - unique
+          - not_null
+      - name: full_date
+        description: "Full date value e.g. 2024-01-01"
+        tests:
+          - not_null
+      - name: is_weekend
+        description: "1 if Saturday or Sunday, 0 otherwise"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+
+  - name: dim_payment_type
+    description: "6 payment type codes decoded to human-readable descriptions"
+    columns:
+      - name: payment_type_id
+        description: "Primary key — payment type code from source data"
+        tests:
+          - unique
+          - not_null
+      - name: payment_description
+        description: "Human readable label e.g. Credit card, Cash"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Credit card', 'Cash', 'No charge', 'Dispute', 'Unknown', 'Voided trip']
+
+  - name: fact_trips
+    description: >
+      Central fact table — one row per NYC yellow taxi trip in 2024. 35.5M rows.
+      Note: column-level dbt tests are not applied here because Synapse Serverless
+      cannot execute distributed NOT NULL checks through nested view chains over
+      35M-row external tables via ODBC. Data quality for this model was validated
+      directly in Synapse Studio during Chapter 4 — zero nulls confirmed in
+      fare_amount, total_amount, pickup_location_id and dropoff_location_id
+      across all 35,536,559 rows.
+
+  - name: agg_revenue_by_zone
+    description: >
+      Pre-aggregated revenue by pickup zone — 265 rows powering dashboard visuals.
+      Note: column-level dbt tests omitted for the same Synapse Serverless
+      distributed processing limitation as fact_trips. Aggregation correctness
+      was validated by direct Synapse query in Chapter 4.
+    columns:
+      - name: zone_name
+        description: "NYC taxi zone name"
+      - name: total_revenue
+        description: "Sum of total_amount for all trips in this zone"
+      - name: total_trips
+        description: "Count of trips originating from this zone"
