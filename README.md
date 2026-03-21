@@ -1,5 +1,7 @@
 # NYC Taxi Analytics Platform — Azure Data Engineering Project
 
+![dbt CI](https://github.com/rajvamsi18/nyc-taxi-azure-de/actions/workflows/dbt_ci.yml/badge.svg)
+
 > An end-to-end data engineering pipeline built on Microsoft Azure, transforming 100M+ real NYC taxi trip records into a business-ready analytics platform that answers operational questions about revenue, demand, and driver allocation.
 
 ---
