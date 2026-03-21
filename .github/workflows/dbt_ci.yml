@@ -1,0 +1,76 @@
+name: dbt CI — Run models and tests on Synapse
+
+# Trigger: runs on every push to main branch
+# Also runs on pull requests to main so you can test before merging
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  dbt-test:
+    name: Run dbt models and tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out your repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3: Install Microsoft ODBC Driver (required for dbt-synapse)
+      - name: Install ODBC Driver 18 for SQL Server
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+
+      # Step 4: Install dbt and the Synapse adapter
+      - name: Install dbt-synapse
+        run: pip install dbt-synapse
+
+      # Step 5: Create the profiles.yml file from GitHub Secrets
+      # This is the secure way — credentials never appear in any file
+      - name: Create dbt profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << PROFILE
+          nyctaxi_dbt:
+            target: dev
+            outputs:
+              dev:
+                type: synapse
+                driver: 'ODBC Driver 18 for SQL Server'
+                server: ${{ secrets.SYNAPSE_SERVER }}
+                port: 1433
+                database: ${{ secrets.SYNAPSE_DATABASE }}
+                schema: gold
+                authentication: sql
+                user: ${{ secrets.SYNAPSE_USERNAME }}
+                password: "${{ secrets.SYNAPSE_PASSWORD }}"
+                encrypt: true
+                trust_cert: true
+          PROFILE
+
+      # Step 6: Install dbt packages (dbt_utils)
+      - name: Install dbt packages
+        working-directory: dbt_project
+        run: dbt deps
+
+      # Step 7: Run all dbt models
+      - name: Run dbt models
+        working-directory: dbt_project
+        run: dbt run
+
+      # Step 8: Run all dbt tests
+      - name: Run dbt tests
+        working-directory: dbt_project
+        run: dbt test
